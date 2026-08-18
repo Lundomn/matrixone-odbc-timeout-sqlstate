@@ -118,9 +118,13 @@ class Database {
     SQLRETURN rc = SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &env_);
     if (!succeeded(rc)) throw Failure("SQLAllocHandle ENV failed");
     try {
-      check(SQLSetEnvAttr(env_, SQL_ATTR_ODBC_VERSION,
-                          reinterpret_cast<SQLPOINTER>(SQL_OV_ODBC3), 0),
-            SQL_HANDLE_ENV, env_, "SQLSetEnvAttr ODBC3");
+      const char *version = std::getenv("MO_ODBC_ODBC_VERSION");
+      const SQLPOINTER odbc_version =
+          version && std::string(version) == "2"
+              ? reinterpret_cast<SQLPOINTER>(SQL_OV_ODBC2)
+              : reinterpret_cast<SQLPOINTER>(SQL_OV_ODBC3);
+      check(SQLSetEnvAttr(env_, SQL_ATTR_ODBC_VERSION, odbc_version, 0),
+            SQL_HANDLE_ENV, env_, "SQLSetEnvAttr ODBC version");
       check(SQLAllocHandle(SQL_HANDLE_DBC, env_, &dbc_), SQL_HANDLE_ENV, env_,
             "SQLAllocHandle DBC");
       check(SQLSetConnectAttr(dbc_, SQL_ATTR_LOGIN_TIMEOUT,
@@ -2236,8 +2240,12 @@ void test_query_timeout_known_issue(SQLHDBC dbc) {
                        reinterpret_cast<SQLPOINTER>(uintptr_t{0}), 0),
         SQL_HANDLE_STMT, stmt.handle(), "restore SQL_ATTR_QUERY_TIMEOUT");
   if (rc == SQL_ERROR && seconds >= 0.5 && seconds < 1.8) {
-    expect(!timeout_records.empty() && timeout_records.front().state == "HYT00",
-           "query timeout should report HYT00" + execute_diagnostics);
+    const char *version = std::getenv("MO_ODBC_ODBC_VERSION");
+    const std::string expected = version && std::string(version) == "2"
+                                     ? "S1T00"
+                                     : "HYT00";
+    expect(!timeout_records.empty() && timeout_records.front().state == expected,
+           "query timeout should report " + expected + execute_diagnostics);
     return;
   }
   if (succeeded(rc) && seconds >= 1.8) {
@@ -2270,8 +2278,19 @@ void test_cancel(const std::string &connection_string) {
       std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
           .count();
   const auto cancel_records = diagnostics(SQL_HANDLE_STMT, stmt.handle());
+  const char *version = std::getenv("MO_ODBC_ODBC_VERSION");
+  const std::string expected = version && std::string(version) == "2"
+                                   ? "S1008"
+                                   : "HY008";
+  const bool state_ok = !cancel_records.empty() &&
+                        cancel_records.front().state == expected;
+  const bool native_ok = !cancel_records.empty() &&
+                         (cancel_records.front().native_error == 1317 ||
+                          (cancel_records.front().native_error == 1105 &&
+                           cancel_records.front().message.find(
+                               "context canceled") != std::string::npos));
   if (!succeeded(cancel_rc) || execute_rc.load() != SQL_ERROR || seconds > 4.0 ||
-      cancel_records.empty() || cancel_records.front().state != "HY008") {
+      !state_ok || !native_ok) {
     throw Failure("SQLCancel did not interrupt SELECT sleep(5): cancel_rc=" +
                   std::to_string(cancel_rc) + " execute_rc=" +
                   std::to_string(execute_rc.load()) + " elapsed=" +

@@ -224,6 +224,18 @@ jobs:
           MO_ODBC_CONNECTION_STRING: DRIVER={MatrixOne ODBC 9.7 ANSI Driver};SERVER=127.0.0.1;UID=root;PWD=111;SSLMODE=DISABLED
         run: ./build-linux/test/mo_odbc_deep
 
+      - name: Run deep Unicode ODBC 2.x compatibility suite
+        env:
+          MO_ODBC_CONNECTION_STRING: DRIVER={MatrixOne ODBC 9.7 Unicode Driver};SERVER=127.0.0.1;UID=root;PWD=111;SSLMODE=DISABLED
+          MO_ODBC_ODBC_VERSION: "2"
+        run: ./build-linux/test/mo_odbc_deep
+
+      - name: Run deep ANSI ODBC 2.x compatibility suite
+        env:
+          MO_ODBC_CONNECTION_STRING: DRIVER={MatrixOne ODBC 9.7 ANSI Driver};SERVER=127.0.0.1;UID=root;PWD=111;SSLMODE=DISABLED
+          MO_ODBC_ODBC_VERSION: "2"
+        run: ./build-linux/test/mo_odbc_deep
+
       - name: Stop MatrixOne
         if: always()
         continue-on-error: true
